@@ -1,9 +1,10 @@
 #include <iostream>
-
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 #include <unistd.h>
+
+#include "thread_pool.h"
 
 #define PORT 2048
 #define MAX_EVENT 20
@@ -66,35 +67,39 @@ int main()
     int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
     */
 
-
+    ThreadPool threads(8);
     std::cout<<"start epoll!\n";
     while(1){
         int n_fds = epoll_wait(epoll_fd,events,MAX_EVENT,-1);
 
         for(int i=0;i<n_fds;++i){
-            if(events->data.fd==server_fd){
-                int client_fd = accept(server_fd,nullptr,nullptr);
-                setNonBlocking(client_fd);
+            if(events->events & EPOLLIN){
 
-                epoll_event client_ev{};
-                client_ev.events = EPOLLIN | EPOLLET;
-                client_ev.data.fd = client_fd;
-                
-                epoll_ctl(epoll_fd,EPOLL_CTL_ADD,client_fd,&client_ev);
-                std::cout<<"new client connected !\n";
-            }
-            else{
-                char buffer[1024]={0};
-                int client_fd = events->data.fd;
-                int len = read(client_fd,buffer,sizeof(buffer));
-                if(len==0){
-                    epoll_ctl(epoll_fd,EPOLL_CTL_DEL,client_fd,nullptr);
-                    close(client_fd);
-                    std::cout<<"client:"<<client_fd<<" disconnected！\n";
+                if(events->data.fd==server_fd){
+                    int client_fd = accept(server_fd,nullptr,nullptr);
+                    setNonBlocking(client_fd);
+
+                    epoll_event client_ev{};
+                    client_ev.events = EPOLLIN | EPOLLET;
+                    client_ev.data.fd = client_fd;
+                    
+                    epoll_ctl(epoll_fd,EPOLL_CTL_ADD,client_fd,&client_ev);
+                    std::cout<<"new client connected !\n";
                 }
                 else{
-                    std::cout<<"received message:"<< buffer<<std::endl;
-                    write(client_fd,buffer,len);
+                    threads.add_task([events](){
+                        char buffer[1024]={0};
+                        int client_fd = events->data.fd;
+                        int len = read(client_fd,buffer,sizeof(buffer));
+                        if(len==0){
+                            close(client_fd);
+                            std::cout<<"client:"<<client_fd<<" disconnected in thread:"<<std::this_thread::get_id();
+                        }
+                        else{
+                            std::cout<<"thread:"<<std::this_thread::get_id()<<"received message:"<< buffer<<std::endl;
+                            write(client_fd,buffer,len);
+                        }
+                    });
                 }
             }
         }
