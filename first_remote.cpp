@@ -73,7 +73,7 @@ int main()
         int n_fds = epoll_wait(epoll_fd,events,MAX_EVENT,-1);
 
         for(int i=0;i<n_fds;++i){
-            if(events->events & EPOLLIN){
+            if(events[i].events & EPOLLIN){
 
                 if(events->data.fd==server_fd){
                     int client_fd = accept(server_fd,nullptr,nullptr);
@@ -87,9 +87,9 @@ int main()
                     std::cout<<"new client connected !\n";
                 }
                 else{
-                    threads.add_task([events](){
+                    threads.add_task([events,i](){
                         char buffer[1024]={0};
-                        int client_fd = events->data.fd;
+                        int client_fd = events[i].data.fd;
                         int len = read(client_fd,buffer,sizeof(buffer));
                         if(len==0){
                             close(client_fd);
